@@ -5,7 +5,9 @@ Authors: David Fox
 -/
 module
 
-public import Mathlib.Tactic
+public import Mathlib.Data.Nat.Prime.Basic
+public import Mathlib.Tactic.IntervalCases
+public import Mathlib.Tactic.Ring
 
 /-!
 # Fourth powers modulo small numbers
