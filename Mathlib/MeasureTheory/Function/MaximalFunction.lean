@@ -5,11 +5,14 @@ Authors: David Fox
 -/
 module
 
+public import Mathlib.Analysis.SpecialFunctions.Integrability.Basic
+public import Mathlib.Analysis.SpecialFunctions.Integrals.Basic
 public import Mathlib.MeasureTheory.Covering.Besicovitch
 public import Mathlib.MeasureTheory.Covering.BesicovitchVectorSpace
 public import Mathlib.MeasureTheory.Function.ContinuousMapDense
 public import Mathlib.MeasureTheory.Function.LpSpace.ContinuousFunctions
 public import Mathlib.MeasureTheory.Integral.Average
+public import Mathlib.MeasureTheory.Integral.Layercake
 public import Mathlib.MeasureTheory.Integral.Lebesgue.DominatedConvergence
 public import Mathlib.MeasureTheory.Measure.Haar.OfBasis
 public import Mathlib.MeasureTheory.Measure.Regular
@@ -77,6 +80,37 @@ noncomputable def ballAverage (μ : Measure E) (f : E → F) (r : ℝ) (x : E) :
 theorem maximalFunction_eq_iSup_ballAverage (μ : Measure E) (f : E → F) (x : E) :
     maximalFunction μ f x = ⨆ (r : ℝ) (_ : 0 < r), ballAverage μ f r x := by
   simp only [maximalFunction, ballAverage]
+
+
+/-- The ball average of a sum is at most the sum of the ball averages:
+the `ℝ≥0∞` triangle inequality for `ballAverage`. -/
+theorem ballAverage_add_le (μ : Measure E) {f g : E → F}
+    (hf : AEStronglyMeasurable f μ) (r : ℝ) (x : E) :
+    ballAverage μ (f + g) r x ≤ ballAverage μ f r x + ballAverage μ g r x := by
+  rw [ballAverage, ballAverage, ballAverage, setLAverage_eq, setLAverage_eq,
+    setLAverage_eq, ENNReal.div_add_div_same]
+  refine ENNReal.div_le_div_right ?_ _
+  calc ∫⁻ y in Metric.ball x r, ‖(f + g) y‖ₑ ∂μ
+      ≤ ∫⁻ y in Metric.ball x r, (‖f y‖ₑ + ‖g y‖ₑ) ∂μ :=
+        lintegral_mono_ae (Filter.Eventually.of_forall fun y => eNorm_add_le _ _)
+    _ = ∫⁻ y in Metric.ball x r, ‖f y‖ₑ ∂μ
+          + ∫⁻ y in Metric.ball x r, ‖g y‖ₑ ∂μ :=
+        lintegral_add_left' hf.eNorm.restrict _
+
+/-- The maximal function is subadditive. -/
+theorem maximalFunction_add_le (μ : Measure E) {f g : E → F}
+    (hf : AEStronglyMeasurable f μ) (x : E) :
+    maximalFunction μ (f + g) x ≤ maximalFunction μ f x + maximalFunction μ g x := by
+  rw [maximalFunction_eq_iSup_ballAverage, maximalFunction_eq_iSup_ballAverage,
+    maximalFunction_eq_iSup_ballAverage]
+  refine iSup_le fun r => iSup_le fun hr => le_trans (ballAverage_add_le μ hf r x) ?_
+  have hf_le : ballAverage μ f r x ≤ ⨆ (r : ℝ) (_ : 0 < r), ballAverage μ f r x :=
+    (le_iSup (fun _ : 0 < r => ballAverage μ f r x) hr).trans
+      (le_iSup (fun r => ⨆ _ : 0 < r, ballAverage μ f r x) r)
+  have hg_le : ballAverage μ g r x ≤ ⨆ (r : ℝ) (_ : 0 < r), ballAverage μ g r x :=
+    (le_iSup (fun _ : 0 < r => ballAverage μ g r x) hr).trans
+      (le_iSup (fun r => ⨆ _ : 0 < r, ballAverage μ g r x) r)
+  exact add_le_add hf_le hg_le
 
 variable [BorelSpace E]
 
@@ -713,5 +747,482 @@ theorem weakType_one_one (μ : Measure E)
   rw [hmeas.measure_eq_iSup_isCompact μ]
   refine iSup_le fun K => iSup_le fun hKsub => iSup_le fun hK => ?_
   exact measure_isCompact_subset_levelSet_le μ hf hτ hN ht hK hKsub
+
+
+omit [BorelSpace E] [NormedSpace ℝ F] in
+/-- The maximal function of an a.e.-bounded function is bounded by the same
+constant, at *every* point: a single null set works for all balls at once. -/
+theorem maximalFunction_le_of_ae_enorm_le {μ : Measure E}
+    [MeasureTheory.Measure.IsAddHaarMeasure μ] {f : E → F} {C : ℝ≥0∞}
+    (hf : ∀ᵐ y ∂μ, ‖f y‖ₑ ≤ C) (x : E) :
+    maximalFunction μ f x ≤ C := by
+  rw [maximalFunction_eq_iSup_ballAverage]
+  refine iSup_le fun r => iSup_le fun hr => ?_
+  have hpos : 0 < μ (Metric.ball x r) :=
+    Metric.isOpen_ball.measure_pos μ (Metric.nonempty_ball.mpr hr)
+  have hfin : μ (Metric.ball x r) < ∞ :=
+    lt_of_le_of_lt (measure_mono Metric.ball_subset_closedBall)
+      (isCompact_closedBall x r).measure_lt_top
+  have hInt : ∫⁻ y in Metric.ball x r, ‖f y‖ₑ ∂μ ≤ C * μ (Metric.ball x r) := by
+    calc ∫⁻ y in Metric.ball x r, ‖f y‖ₑ ∂μ
+        ≤ ∫⁻ _y in Metric.ball x r, C ∂μ :=
+          lintegral_mono_ae ((hf.filter_mono ae_restrict_le).mono fun _y hy => hy)
+      _ = C * μ (Metric.ball x r) := setLIntegral_const _ _
+  rw [ballAverage, setLAverage_eq, ENNReal.div_le_iff hpos.ne' hfin.ne]
+  exact hInt
+
+omit [BorelSpace E] [NormedSpace ℝ F] in
+/-- The maximal function is bounded by the essential supremum of `‖f‖ₑ`. -/
+theorem maximalFunction_le_essSup {μ : Measure E}
+    [MeasureTheory.Measure.IsAddHaarMeasure μ] {f : E → F}
+    (_hf : MemLp f ∞ μ) (x : E) :
+    maximalFunction μ f x ≤ essSup (fun y => ‖f y‖ₑ) μ :=
+  maximalFunction_le_of_ae_enorm_le (ENNReal.ae_le_essSup _) x
+
+
+/-- The distribution-function bound behind strong type: for `f ∈ L^p`,
+the level set of the maximal function is controlled by the `L^1` mass of
+the part of `f` above half the height. The constant is twice the
+Besicovitch constant, from applying weak type `(1,1)` to that part. -/
+theorem measure_levelSet_le_rpow (μ : Measure E)
+    [MeasureTheory.Measure.IsAddHaarMeasure μ] {f : E → F} {p : ℝ} (hp : 1 < p)
+    (hf : StronglyMeasurable f)
+    (hfLp : ∫⁻ y, ‖f y‖ₑ ^ p ∂μ < ∞) :
+    ∃ C : ℝ≥0∞, ∀ t : ℝ≥0∞, t ≠ 0 →
+      μ {x | t < maximalFunction μ f x} ≤
+        (C / t) * ∫⁻ y in {y | t / 2 < ‖f y‖ₑ}, ‖f y‖ₑ ∂μ := by
+  obtain ⟨N, τ, hτ, hN⟩ := HasBesicovitchCovering.no_satelliteConfig (α := E)
+  refine ⟨2 * (N : ℝ≥0∞), fun t ht => ?_⟩
+  have hhalf : ∀ a : ℝ≥0∞, a / 2 + a / 2 = a := by
+    intro a
+    rw [ENNReal.div_add_div_same, ← two_mul, ENNReal.div_eq_inv_mul, ← mul_assoc,
+      ENNReal.inv_mul_cancel (by norm_num) (by norm_num), one_mul]
+  by_cases ht_top : t = ∞
+  · subst ht_top
+    have hempty : {x | (∞ : ℝ≥0∞) < maximalFunction μ f x} = ∅ :=
+      Set.eq_empty_of_forall_notMem fun x hx => by
+        have hx' : (∞ : ℝ≥0∞) < maximalFunction μ f x := hx
+        exact not_lt.mpr (le_top : maximalFunction μ f x ≤ ∞) hx'
+    rw [hempty]
+    simp
+  -- The split of `f` at height `t / 2`.
+  set s : Set E := {y | t / 2 < ‖f y‖ₑ} with hs_def
+  have hs : MeasurableSet s := hf.eNorm measurableSet_Ioi
+  set f₁ : E → F := s.indicator f with hf₁_def
+  set f₂ : E → F := f - f₁ with hf₂_def
+  have hsum : f₁ + f₂ = f := by
+    funext y
+    by_cases hy : y ∈ s <;> simp [hf₁_def, hf₂_def, Set.indicator_of_mem,
+      Set.indicator_of_notMem, hy]
+  have hf₁SM : StronglyMeasurable f₁ := hf.indicator hs
+  have ht2 : t / 2 ≠ 0 := by
+    intro h
+    exact ht (by rw [← hhalf t, h, add_zero])
+  have ht2fin : t / 2 < ∞ :=
+    (ENNReal.half_lt_self ht ht_top).trans (lt_top_iff_ne_top.mpr ht_top)
+  -- `B4` applied to the small part: `M f₂ ≤ t / 2` everywhere.
+  have hf₂_le : ∀ x, maximalFunction μ f₂ x ≤ t / 2 := by
+    intro x
+    apply maximalFunction_le_of_ae_enorm_le (μ := μ) _ x
+    refine Filter.Eventually.of_forall fun y => ?_
+    by_cases hy : y ∈ s
+    · have h0 : f₂ y = 0 := by
+        simp [hf₂_def, hf₁_def, Set.indicator_of_mem hy]
+      rw [h0]
+      simp
+    · have hfy : f₂ y = f y := by
+        simp [hf₂_def, hf₁_def, Set.indicator_of_notMem hy]
+      rw [hfy]
+      exact le_of_not_gt hy
+  -- The level-set inclusion, pointwise.
+  have hsub : {x | t < maximalFunction μ f x} ⊆
+      {x | t / 2 < maximalFunction μ f₁ x} := by
+    intro x hx
+    by_contra hcon
+    have hcon' : maximalFunction μ f₁ x ≤ t / 2 := le_of_not_gt hcon
+    have h1 : maximalFunction μ f x ≤ t := by
+      calc maximalFunction μ f x = maximalFunction μ (f₁ + f₂) x := by rw [hsum]
+        _ ≤ maximalFunction μ f₁ x + maximalFunction μ f₂ x :=
+          maximalFunction_add_le μ hf₁SM.aestronglyMeasurable x
+        _ ≤ t / 2 + t / 2 := add_le_add hcon' (hf₂_le x)
+        _ = t := hhalf t
+    exact (not_lt.mpr h1) hx
+  -- The large part is integrable: on `s`, `‖f‖ₑ ≤ ‖f‖ₑ ^ p / (t / 2) ^ (p - 1)`.
+  have hf₁_int : Integrable f₁ μ := by
+    refine ⟨hf₁SM.aestronglyMeasurable, ?_⟩
+    rw [hasFiniteIntegral_iff_eNorm]
+    have hne0 : (t / 2) ^ (p - 1) ≠ 0 :=
+      (ENNReal.rpow_pos (pos_iff_ne_zero.mpr ht2) ht2fin.ne).ne'
+    have hneTop : (t / 2) ^ (p - 1) ≠ ∞ :=
+      (ENNReal.rpow_lt_top_of_nonneg (by linarith) ht2fin.ne).ne
+    have hpt : ∀ y, ‖f₁ y‖ₑ ≤ ‖f y‖ₑ ^ p / (t / 2) ^ (p - 1) := by
+      intro y
+      by_cases hy : y ∈ s
+      · have hfy : ‖f₁ y‖ₑ = ‖f y‖ₑ := by
+          simp [hf₁_def, Set.indicator_of_mem hy]
+        rw [hfy]
+        have ha : t / 2 < ‖f y‖ₑ := hy
+        have ha0 : ‖f y‖ₑ ≠ 0 :=
+          ne_of_gt (lt_trans (pos_iff_ne_zero.mpr ht2) ha)
+        by_cases ha_top : ‖f y‖ₑ = ∞
+        · rw [ha_top]
+          have hfin : (t / 2) ^ (p - 1) ≠ ∞ :=
+            (ENNReal.rpow_lt_top_of_nonneg (by linarith) ht2fin.ne).ne
+          simp [ENNReal.top_rpow_of_pos (by linarith : (0 : ℝ) < p), hfin]
+        · have hle : (t / 2) ^ (p - 1) ≤ ‖f y‖ₑ ^ (p - 1) :=
+            ENNReal.rpow_le_rpow ha.le (by linarith)
+          have hsplit : ‖f y‖ₑ ^ p = ‖f y‖ₑ ^ (p - 1) * ‖f y‖ₑ := by
+            conv_lhs => rw [← sub_add_cancel p 1]
+            rw [ENNReal.rpow_add (p - 1) 1 ha0 ha_top, ENNReal.rpow_one]
+          rw [hsplit, ENNReal.le_div_iff_mul_le (Or.inl hne0) (Or.inl hneTop),
+            mul_comm (‖f y‖ₑ ^ (p - 1)) (‖f y‖ₑ)]
+          gcongr
+      · have hfy : ‖f₁ y‖ₑ = 0 := by
+          simp [hf₁_def, Set.indicator_of_notMem hy]
+        rw [hfy]
+        exact zero_le
+    calc ∫⁻ y, ‖f₁ y‖ₑ ∂μ ≤ ∫⁻ y, ‖f y‖ₑ ^ p / (t / 2) ^ (p - 1) ∂μ :=
+          lintegral_mono hpt
+      _ = ((t / 2) ^ (p - 1))⁻¹ * ∫⁻ y, ‖f y‖ₑ ^ p ∂μ := by
+          rw [lintegral_congr_ae (Filter.Eventually.of_forall fun y =>
+              ENNReal.div_eq_inv_mul),
+            lintegral_const_mul' _ _ (ENNReal.inv_ne_top.mpr hne0)]
+      _ < ∞ :=
+          ENNReal.mul_lt_top (lt_top_iff_ne_top.mpr (ENNReal.inv_ne_top.mpr hne0)) hfLp
+  -- Weak type `(1,1)` for `f₁` at height `t / 2`, with the explicit constant.
+  have hmeas₁ : MeasurableSet {x | t / 2 < maximalFunction μ f₁ x} :=
+    (measurable_maximalFunction μ hf₁_int.locallyIntegrable) measurableSet_Ioi
+  have hcore : μ {x | t / 2 < maximalFunction μ f₁ x} ≤
+      ((N : ℝ≥0∞) / (t / 2)) * ∫⁻ y, ‖f₁ y‖ₑ ∂μ := by
+    rw [hmeas₁.measure_eq_iSup_isCompact μ]
+    refine iSup_le fun K => iSup_le fun hKsub => iSup_le fun hK => ?_
+    exact measure_isCompact_subset_levelSet_le μ hf₁_int hτ hN ht2 hK hKsub
+  have hInt₁ : ∫⁻ y, ‖f₁ y‖ₑ ∂μ = ∫⁻ y in s, ‖f y‖ₑ ∂μ := by
+    have hfun : (fun y => ‖f₁ y‖ₑ) = s.indicator (fun y => ‖f y‖ₑ) := by
+      funext y
+      by_cases hy : y ∈ s <;> simp [hf₁_def, Set.indicator_of_mem,
+        Set.indicator_of_notMem, hy]
+    rw [hfun, lintegral_indicator hs]
+  have hN2 : (N : ℝ≥0∞) / (t / 2) = 2 * (N : ℝ≥0∞) / t := by
+    conv_lhs => rw [ENNReal.div_eq_inv_mul, ENNReal.inv_div (Or.inr ht_top) (Or.inr ht),
+      ENNReal.div_eq_inv_mul]
+    rw [ENNReal.div_eq_inv_mul]
+    exact mul_assoc _ _ _
+  calc μ {x | t < maximalFunction μ f x}
+      ≤ μ {x | t / 2 < maximalFunction μ f₁ x} := measure_mono hsub
+    _ ≤ ((N : ℝ≥0∞) / (t / 2)) * ∫⁻ y, ‖f₁ y‖ₑ ∂μ := hcore
+    _ = (2 * (N : ℝ≥0∞) / t) * ∫⁻ y in s, ‖f y‖ₑ ∂μ := by rw [hN2, hInt₁]
+
+
+/-- The Tonelli step of the strong-type proof: the layer-cake integral of
+the distribution bound, with the order of integration swapped. The inner
+integral `∫₀^{2‖g y‖ₑ} t ^ (p - 2) dt = (2‖g y‖ₑ) ^ (p - 1) / (p - 1)`
+produces the factor `2 ^ (p - 1) / (p - 1)`; together with the `2` in the
+distribution bound's constant this gives the overall `2 ^ p`. -/
+theorem strongType (μ : Measure E)
+    [MeasureTheory.Measure.IsAddHaarMeasure μ] {f : E → F} {p : ℝ} (hp : 1 < p)
+    (hf : MemLp f (.ofReal p) μ) :
+    ∃ C : ℝ≥0∞, ∫⁻ x, (maximalFunction μ f x) ^ p ∂μ ≤
+      C * ∫⁻ x, ‖f x‖ₑ ^ p ∂μ := by
+  -- Work with a strongly measurable representative of `f`.
+  obtain ⟨g, hgSM, hfg⟩ := hf.aestronglyMeasurable
+  have hfMg : MemLp g (.ofReal p) μ := by
+    have hf' : eLpNorm f (.ofReal p) μ < ∞ := memLp_iff.mp hf
+    rwa [eLpNorm_congr_ae hfg] at hf'
+  have hloc : LocallyIntegrable g μ := hfMg.locallyIntegrable (by
+    rw [← ENNReal.ofReal_one]
+    exact ENNReal.ofReal_le_ofReal (by linarith))
+  have hge : Measurable fun y => ‖g y‖ₑ := hgSM.eNorm
+  have hmeasMg : Measurable (maximalFunction μ g) := measurable_maximalFunction μ hloc
+  have hfLp : ∫⁻ y, ‖g y‖ₑ ^ p ∂μ < ∞ := by
+    have h := lintegral_rpow_eNorm_lt_top_of_eLpNorm_lt_top
+      (p := ENNReal.ofReal p) (f := g) (μ := μ)
+      ((ENNReal.ofReal_pos.mpr (by linarith : (0 : ℝ) < p)).ne')
+      ENNReal.ofReal_ne_top hfMg.eLpNorm_lt_top
+    rwa [ENNReal.toReal_ofReal (by linarith : (0 : ℝ) ≤ p)] at h
+  obtain ⟨C₁, hC₁⟩ := measure_levelSet_le_rpow μ hp hgSM hfLp
+  have hge' : AEMeasurable (fun y => ‖g y‖ₑ ^ p) μ := by fun_prop
+  -- The distribution bound, integrated against the layer-cake density.
+  have hTon : ∫⁻ t in Set.Ioi 0, μ {a | ENNReal.ofReal t < maximalFunction μ g a} *
+        ENNReal.ofReal (p * t ^ (p - 1)) ∂volume ≤
+      (C₁ * ENNReal.ofReal p * 2 ^ (p - 1) / ENNReal.ofReal (p - 1)) *
+        ∫⁻ y, ‖g y‖ₑ ^ p ∂μ := by
+    have step1 : ∫⁻ t in Set.Ioi 0, μ {a | ENNReal.ofReal t < maximalFunction μ g a} *
+          ENNReal.ofReal (p * t ^ (p - 1)) ∂volume ≤
+        ∫⁻ t in Set.Ioi 0, (C₁ / ENNReal.ofReal t) * ENNReal.ofReal (p * t ^ (p - 1)) *
+          ∫⁻ y in {y | ENNReal.ofReal t / 2 < ‖g y‖ₑ}, ‖g y‖ₑ ∂μ ∂volume := by
+      refine lintegral_mono_ae ?_
+      rw [ae_restrict_iff' measurableSet_Ioi]
+      refine Filter.Eventually.of_forall fun t ht => ?_
+      have ht0 : (0 : ℝ) < t := ht
+      have h := hC₁ (ENNReal.ofReal t) (ENNReal.ofReal_pos.mpr ht0).ne'
+      calc μ {a | ENNReal.ofReal t < maximalFunction μ g a} *
+            ENNReal.ofReal (p * t ^ (p - 1))
+          ≤ ((C₁ / ENNReal.ofReal t) *
+              ∫⁻ y in {y | ENNReal.ofReal t / 2 < ‖g y‖ₑ}, ‖g y‖ₑ ∂μ) *
+              ENNReal.ofReal (p * t ^ (p - 1)) := mul_le_mul_left h _
+        _ = (C₁ / ENNReal.ofReal t) * ENNReal.ofReal (p * t ^ (p - 1)) *
+              ∫⁻ y in {y | ENNReal.ofReal t / 2 < ‖g y‖ₑ}, ‖g y‖ₑ ∂μ := by ring
+    refine step1.trans ?_
+    -- The inner integral over `y`, for fixed `t`, evaluated after the swap.
+    have hinner : ∀ y, ∫⁻ t in Set.Ioi 0, (C₁ / ENNReal.ofReal t) *
+          ENNReal.ofReal (p * t ^ (p - 1)) *
+          ({y' | ENNReal.ofReal t / 2 < ‖g y'‖ₑ}.indicator (fun y' => ‖g y'‖ₑ)) y
+          ∂volume =
+        (C₁ * ENNReal.ofReal p * 2 ^ (p - 1) / ENNReal.ofReal (p - 1)) * ‖g y‖ₑ ^ p := by
+      intro y
+      set a : ℝ≥0∞ := ‖g y‖ₑ with ha_def
+      have ha_top : a ≠ ∞ := eNorm_ne_top
+      have hsupp : ∀ t : ℝ, 0 < t →
+          (C₁ / ENNReal.ofReal t) * ENNReal.ofReal (p * t ^ (p - 1)) *
+              ({y' | ENNReal.ofReal t / 2 < ‖g y'‖ₑ}.indicator (fun y' => ‖g y'‖ₑ)) y =
+            (Set.Ioo 0 ((2 * a).toReal)).indicator
+              (fun t => C₁ * ENNReal.ofReal p * a * ENNReal.ofReal (t ^ (p - 2))) t := by
+        intro t ht
+        have hT0 : ENNReal.ofReal t ≠ 0 := (ENNReal.ofReal_pos.mpr ht).ne'
+        have hTtop : ENNReal.ofReal t ≠ ∞ := ENNReal.ofReal_ne_top
+        by_cases hcase : ENNReal.ofReal t / 2 < a
+        · have ht2 : t < (2 * a).toReal :=
+            (ENNReal.ofReal_lt_iff_lt_toReal ht.le (by finiteness)).mp (by
+              have h2 : ENNReal.ofReal t / 2 < a := hcase
+              rw [ENNReal.div_lt_iff (Or.inr hT0) (Or.inr hTtop)] at h2
+              rwa [mul_comm] at h2)
+          rw [Set.indicator_of_mem hcase,
+            Set.indicator_of_mem (Set.mem_Ioo.mpr ⟨ht, ht2⟩)]
+          have e1 : ENNReal.ofReal (p * t ^ (p - 1)) =
+              ENNReal.ofReal p * (ENNReal.ofReal t) ^ (p - 1) := by
+            rw [ENNReal.ofReal_mul (by linarith),
+              ENNReal.ofReal_rpow_of_pos ht]
+          have e2 : (ENNReal.ofReal t)⁻¹ * (ENNReal.ofReal t) ^ (p - 1) =
+              (ENNReal.ofReal t) ^ (p - 2) := by
+            have h := ENNReal.rpow_sub (p - 1) 1 hT0 hTtop (x := ENNReal.ofReal t)
+            rw [ENNReal.rpow_one, ENNReal.div_eq_inv_mul,
+              show (p - 1) - 1 = p - 2 by ring] at h
+            exact h.symm
+          calc (C₁ / ENNReal.ofReal t) * ENNReal.ofReal (p * t ^ (p - 1)) * a
+              = C₁ * ENNReal.ofReal p * a *
+                  ((ENNReal.ofReal t)⁻¹ * (ENNReal.ofReal t) ^ (p - 1)) := by
+                rw [e1, ENNReal.div_eq_inv_mul]; ring
+            _ = C₁ * ENNReal.ofReal p * a * (ENNReal.ofReal t) ^ (p - 2) := by
+                rw [e2]
+            _ = C₁ * ENNReal.ofReal p * a * ENNReal.ofReal (t ^ (p - 2)) := by
+                rw [ENNReal.ofReal_rpow_of_pos ht]
+        · have ht2 : ¬ t < (2 * a).toReal := by
+            intro hlt
+            apply hcase
+            have h1 : ENNReal.ofReal t < 2 * a :=
+              (ENNReal.ofReal_lt_iff_lt_toReal ht.le (by finiteness)).mpr hlt
+            rw [ENNReal.div_lt_iff (Or.inr hT0) (Or.inr hTtop), mul_comm]
+            exact h1
+          rw [Set.indicator_of_notMem hcase,
+            Set.indicator_of_notMem (fun h => ht2 (Set.mem_Ioo.mp h).2), mul_zero]
+      have hIntForm : ∫⁻ t in Set.Ioi 0, (C₁ / ENNReal.ofReal t) *
+            ENNReal.ofReal (p * t ^ (p - 1)) *
+            ({y' | ENNReal.ofReal t / 2 < ‖g y'‖ₑ}.indicator (fun y' => ‖g y'‖ₑ)) y
+            ∂volume =
+          ∫⁻ t in Set.Ioo 0 ((2 * a).toReal), C₁ * ENNReal.ofReal p * a *
+            ENNReal.ofReal (t ^ (p - 2)) ∂volume := by
+        rw [← lintegral_indicator measurableSet_Ioi,
+          ← lintegral_indicator measurableSet_Ioo]
+        refine lintegral_congr fun t => ?_
+        by_cases ht : t ∈ Set.Ioi (0 : ℝ)
+        · rw [Set.indicator_of_mem ht]
+          exact hsupp t ht
+        · have ht0 : t ∉ Set.Ioo 0 ((2 * a).toReal) := fun h => ht h.1
+          rw [Set.indicator_of_notMem ht, Set.indicator_of_notMem ht0]
+      rw [hIntForm]
+      have hIntReal : ∫⁻ t in Set.Ioo 0 ((2 * a).toReal), C₁ * ENNReal.ofReal p * a *
+            ENNReal.ofReal (t ^ (p - 2)) ∂volume =
+          (C₁ * ENNReal.ofReal p * a) *
+            ENNReal.ofReal ((2 * a).toReal ^ (p - 1) / (p - 1)) := by
+        rw [lintegral_const_mul'' (C₁ * ENNReal.ofReal p * a)
+          (by fun_prop : AEMeasurable (fun t => ENNReal.ofReal (t ^ (p - 2)))
+            (volume.restrict (Set.Ioo 0 ((2 * a).toReal))))]
+        congr 1
+        rw [← ofReal_integral_eq_lintegral_ofReal]
+        · congr 1
+          have hrw : p - 2 + 1 = p - 1 := by ring
+          rw [← integral_Ioc_eq_integral_Ioo,
+            ← intervalIntegral.integral_of_le (by positivity : (0 : ℝ) ≤ (2 * a).toReal),
+            integral_rpow (Or.inl (by linarith : (-1 : ℝ) < p - 2)), hrw,
+            Real.zero_rpow (by linarith : (p - 1) ≠ 0), sub_zero]
+        · exact ((intervalIntegrable_iff_integrableOn_Ioc_of_le
+            ENNReal.toReal_nonneg).mp
+            (intervalIntegral.intervalIntegrable_rpow' (by linarith : (-1 : ℝ) < p - 2))).mono_set
+            Set.Ioo_subset_Ioc_self
+        · exact (ae_restrict_iff' measurableSet_Ioo).mpr
+            (Filter.Eventually.of_forall fun t ht => Real.rpow_nonneg ht.1.le _)
+      rw [hIntReal]
+      have e3 : ENNReal.ofReal ((2 * a).toReal ^ (p - 1) / (p - 1)) =
+          (2 ^ (p - 1) * a ^ (p - 1)) * (ENNReal.ofReal (p - 1))⁻¹ := by
+        rw [div_eq_inv_mul,
+          ENNReal.ofReal_mul (inv_nonneg.mpr (by linarith : (0 : ℝ) ≤ p - 1)),
+          ENNReal.ofReal_inv_of_pos (by linarith : (0 : ℝ) < p - 1),
+          ← ENNReal.ofReal_rpow_of_nonneg
+            (ENNReal.toReal_nonneg (a := 2 * a)) (by linarith : (0 : ℝ) ≤ p - 1),
+          ENNReal.ofReal_toReal (show (2 * a) ≠ ∞ by finiteness),
+          ENNReal.mul_rpow_of_nonneg _ _ (by linarith : (0 : ℝ) ≤ p - 1)]
+        ring
+      rw [e3]
+      have e4 : a * a ^ (p - 1) = a ^ p := by
+        by_cases ha0 : a = 0
+        · simp [ha0, ENNReal.zero_rpow_of_pos (by linarith : (0 : ℝ) < p - 1),
+            ENNReal.zero_rpow_of_pos (by linarith : (0 : ℝ) < p)]
+        · nth_rewrite 1 [← ENNReal.rpow_one a]
+          rw [← ENNReal.rpow_add 1 (p - 1) ha0 ha_top,
+            show (1 : ℝ) + (p - 1) = p by ring]
+      rw [ENNReal.div_eq_inv_mul, ← e4]
+      ring
+    -- Assemble: indicator form, swap, inner integral, pull the constant out.
+    have step2 : ∀ t : ℝ,
+        ∫⁻ y in {y | ENNReal.ofReal t / 2 < ‖g y‖ₑ}, ‖g y‖ₑ ∂μ =
+        ∫⁻ y, ({y | ENNReal.ofReal t / 2 < ‖g y‖ₑ}.indicator
+          (fun y => ‖g y‖ₑ)) y ∂μ :=
+      fun t => (lintegral_indicator (hge measurableSet_Ioi) (fun y => ‖g y‖ₑ)).symm
+    calc ∫⁻ t in Set.Ioi 0, (C₁ / ENNReal.ofReal t) * ENNReal.ofReal (p * t ^ (p - 1)) *
+            ∫⁻ y in {y | ENNReal.ofReal t / 2 < ‖g y‖ₑ}, ‖g y‖ₑ ∂μ ∂volume
+        = ∫⁻ t in Set.Ioi 0, (C₁ / ENNReal.ofReal t) * ENNReal.ofReal (p * t ^ (p - 1)) *
+            ∫⁻ y, ({y | ENNReal.ofReal t / 2 < ‖g y‖ₑ}.indicator
+              (fun y => ‖g y‖ₑ)) y ∂μ ∂volume :=
+          lintegral_congr fun t => by rw [step2 t]
+      _ = ∫⁻ y, ∫⁻ t in Set.Ioi 0, (C₁ / ENNReal.ofReal t) *
+            ENNReal.ofReal (p * t ^ (p - 1)) *
+            ({y | ENNReal.ofReal t / 2 < ‖g y‖ₑ}.indicator (fun y => ‖g y‖ₑ)) y
+            ∂volume ∂μ := by
+          have h1 : ∀ t : ℝ, (C₁ / ENNReal.ofReal t) * ENNReal.ofReal (p * t ^ (p - 1)) *
+                ∫⁻ y, ({y | ENNReal.ofReal t / 2 < ‖g y‖ₑ}.indicator
+                  (fun y => ‖g y‖ₑ)) y ∂μ =
+              ∫⁻ y, (C₁ / ENNReal.ofReal t) * ENNReal.ofReal (p * t ^ (p - 1)) *
+                ({y | ENNReal.ofReal t / 2 < ‖g y‖ₑ}.indicator (fun y => ‖g y‖ₑ)) y
+                ∂μ :=
+            fun t => (lintegral_const_mul'' _
+              (Measurable.indicator hge (hge measurableSet_Ioi)).aemeasurable).symm
+          rw [lintegral_congr h1]
+          have hK : Measurable fun t : ℝ => (C₁ / ENNReal.ofReal t) *
+              ENNReal.ofReal (p * t ^ (p - 1)) :=
+            (measurable_const.div ENNReal.measurable_ofReal).mul
+              (ENNReal.measurable_ofReal.comp
+                (measurable_const.mul (by fun_prop : Measurable fun t : ℝ => t ^ (p - 1))))
+          have hsetM : MeasurableSet
+              {q : ℝ × E | ENNReal.ofReal q.1 / 2 < ‖g q.2‖ₑ} :=
+            measurableSet_lt ((ENNReal.measurable_ofReal.comp measurable_fst).div_const 2)
+              (hge.comp measurable_snd)
+          have hJoint : Measurable fun q : ℝ × E =>
+              (C₁ / ENNReal.ofReal q.1) * ENNReal.ofReal (p * q.1 ^ (p - 1)) *
+                ({q : ℝ × E | ENNReal.ofReal q.1 / 2 < ‖g q.2‖ₑ}.indicator
+                  (fun q => ‖g q.2‖ₑ)) q :=
+            (hK.comp measurable_fst).mul
+              (Measurable.indicator (hge.comp measurable_snd) hsetM)
+          exact lintegral_lintegral_swap (μ := volume.restrict (Set.Ioi 0)) (ν := μ)
+            hJoint.aemeasurable
+      _ = ∫⁻ y, (C₁ * ENNReal.ofReal p * 2 ^ (p - 1) / ENNReal.ofReal (p - 1)) *
+            ‖g y‖ₑ ^ p ∂μ := lintegral_congr hinner
+      _ ≤ (C₁ * ENNReal.ofReal p * 2 ^ (p - 1) / ENNReal.ofReal (p - 1)) *
+            ∫⁻ y, ‖g y‖ₑ ^ p ∂μ := le_of_eq (lintegral_const_mul'' _ hge')
+  refine ⟨C₁ * ENNReal.ofReal p * 2 ^ (p - 1) / ENNReal.ofReal (p - 1), ?_⟩
+  have hInt : ∫⁻ x, ‖f x‖ₑ ^ p ∂μ = ∫⁻ x, ‖g x‖ₑ ^ p ∂μ :=
+    lintegral_congr_ae (hfg.mono fun x hx => congrArg (fun z => ‖z‖ₑ ^ p) hx)
+  rw [maximalFunction_congr_ae hfg, hInt]
+  -- Truncate the maximal function and pass to the supremum over `n`.
+  have hpt : ∀ x, (maximalFunction μ g x) ^ p =
+      ⨆ n : ℕ, (min (maximalFunction μ g x) (n : ℝ≥0∞)) ^ p := by
+    intro x
+    apply le_antisymm
+    · by_cases hx : maximalFunction μ g x = ∞
+      · rw [hx, ENNReal.top_rpow_of_pos (by linarith : (0 : ℝ) < p)]
+        by_contra hlt
+        obtain ⟨m, hm⟩ := ENNReal.exists_nat_gt (not_le.mp hlt).ne
+        have hle : (m : ℝ≥0∞) ≤
+            ⨆ n : ℕ, (min (∞ : ℝ≥0∞) (n : ℝ≥0∞)) ^ p :=
+          le_iSup_of_le (m + 1) (by
+            calc (m : ℝ≥0∞) ≤ ((m + 1 : ℕ) : ℝ≥0∞) := by
+                  exact_mod_cast Nat.le_succ m
+              _ = (((m + 1 : ℕ) : ℝ≥0∞)) ^ (1 : ℝ) := (ENNReal.rpow_one _).symm
+              _ ≤ (((m + 1 : ℕ) : ℝ≥0∞)) ^ p :=
+                  ENNReal.rpow_le_rpow_of_exponent_le
+                    (show (1 : ℝ≥0∞) ≤ ((m + 1 : ℕ) : ℝ≥0∞) by
+                      exact_mod_cast Nat.le_add_left 1 m) (by linarith)
+              _ = (min (∞ : ℝ≥0∞) ((m + 1 : ℕ) : ℝ≥0∞)) ^ p := by
+                  rw [min_eq_right le_top])
+        exact lt_irrefl _ (lt_of_le_of_lt hle hm)
+      · obtain ⟨N, hN⟩ := ENNReal.exists_nat_gt hx
+        exact le_iSup_of_le N (by rw [min_eq_left hN.le])
+    · refine iSup_le fun n => ENNReal.rpow_le_rpow (min_le_left _ _) (by linarith)
+  have hsup : ∫⁻ x, (maximalFunction μ g x) ^ p ∂μ =
+      ⨆ n : ℕ, ∫⁻ x, (min (maximalFunction μ g x) (n : ℝ≥0∞)) ^ p ∂μ := by
+    rw [lintegral_congr hpt]
+    exact lintegral_iSup (fun n => by fun_prop)
+      (fun i j hij x => ENNReal.rpow_le_rpow
+        (min_le_min le_rfl (by exact_mod_cast hij)) (by linarith))
+  rw [hsup]
+  refine iSup_le fun n => ?_
+  have hfin_n : ∀ x, min (maximalFunction μ g x) (n : ℝ≥0∞) ≠ ∞ :=
+    fun x => ne_top_of_le_ne_top (ENNReal.natCast_ne_top n)
+      (min_le_right (maximalFunction μ g x) (n : ℝ≥0∞))
+  have key := lintegral_comp_eq_lintegral_meas_lt_mul μ
+    (f := fun x => (min (maximalFunction μ g x) (n : ℝ≥0∞)).toReal)
+    (g := fun t => p * t ^ (p - 1))
+    (Filter.Eventually.of_forall fun x => ENNReal.toReal_nonneg)
+    ((hmeasMg.min measurable_const).ennreal_toReal).aemeasurable
+    (fun t _ht => IntervalIntegrable.const_mul
+      (intervalIntegral.intervalIntegrable_rpow' (by linarith : (-1 : ℝ) < p - 1)) p)
+    (by filter_upwards [ae_restrict_mem measurableSet_Ioi] with t ht using
+      mul_nonneg (by linarith) (Real.rpow_nonneg ht.le _))
+  have hinnerInt : ∀ ω, (∫ t in 0..((min (maximalFunction μ g ω) (n : ℝ≥0∞)).toReal),
+        p * t ^ (p - 1)) =
+      ((min (maximalFunction μ g ω) (n : ℝ≥0∞)).toReal) ^ p := by
+    intro ω
+    rw [intervalIntegral.integral_const_mul,
+      integral_rpow (Or.inl (by linarith : (-1 : ℝ) < p - 1)),
+      Real.zero_rpow (by linarith : p - 1 + 1 ≠ 0), sub_zero,
+      show p - 1 + 1 = p by ring]
+    have hp0 : (p : ℝ) ≠ 0 := by linarith
+    field_simp
+  rw [lintegral_congr_ae (Filter.Eventually.of_forall fun ω => by
+    rw [hinnerInt ω,
+      ← ENNReal.ofReal_rpow_of_nonneg
+        (ENNReal.toReal_nonneg (a := min (maximalFunction μ g ω) (n : ℝ≥0∞)))
+        (by linarith : (0 : ℝ) ≤ p),
+      ENNReal.ofReal_toReal (hfin_n ω)])] at key
+  refine key.le.trans ?_
+  refine (lintegral_mono_ae ?_).trans hTon
+  rw [ae_restrict_iff' measurableSet_Ioi]
+  refine Filter.Eventually.of_forall fun t ht => ?_
+  have ht0 : (0 : ℝ) < t := ht
+  have hset : {a | t < (min (maximalFunction μ g a) (n : ℝ≥0∞)).toReal} =
+      {a | ENNReal.ofReal t < min (maximalFunction μ g a) (n : ℝ≥0∞)} := by
+    ext a
+    simp only [Set.mem_ofPred_eq]
+    exact (ENNReal.ofReal_lt_iff_lt_toReal ht0.le (hfin_n a)).symm
+  rw [hset]
+  refine mul_le_mul_left ?_ _
+  apply measure_mono
+  intro a ha
+  have ha' : ENNReal.ofReal t < min (maximalFunction μ g a) (n : ℝ≥0∞) := ha
+  exact lt_of_lt_of_le ha' (min_le_left _ _)
+
+/-- The strong-type bound in `eLpNorm` form: the conversion is `rpow`
+algebra, `(∫⁻ (Mf) ^ p) ^ (1 / p) ≤ (C ∫⁻ ‖f‖ₑ ^ p) ^ (1 / p)`, and
+`‖Mf‖ₑ = Mf` since the maximal function is `ℝ≥0∞`-valued. -/
+theorem eLpNorm_maximalFunction_le (μ : Measure E)
+    [MeasureTheory.Measure.IsAddHaarMeasure μ] {f : E → F} {p : ℝ} (hp : 1 < p)
+    (hf : MemLp f (.ofReal p) μ) :
+    ∃ C : ℝ≥0∞, eLpNorm (maximalFunction μ f) (.ofReal p) μ ≤
+      C * eLpNorm f (.ofReal p) μ := by
+  obtain ⟨C, hC⟩ := strongType μ hp hf
+  refine ⟨C ^ (1 / p), ?_⟩
+  have hp0 : ENNReal.ofReal p ≠ 0 :=
+    (ENNReal.ofReal_pos.mpr (by linarith : (0 : ℝ) < p)).ne'
+  have hMf : AEStronglyMeasurable (maximalFunction μ f) μ :=
+    (measurable_maximalFunction μ (hf.locallyIntegrable (by
+      rw [← ENNReal.ofReal_one]
+      exact ENNReal.ofReal_le_ofReal (by linarith)))).aestronglyMeasurable
+  rw [eLpNorm_eq_lintegral_rpow_eNorm_toReal hp0 ENNReal.ofReal_ne_top hMf,
+    eLpNorm_eq_lintegral_rpow_eNorm_toReal hp0 ENNReal.ofReal_ne_top
+      hf.aestronglyMeasurable,
+    ENNReal.toReal_ofReal (by linarith : (0 : ℝ) ≤ p)]
+  simp only [eNorm_eq_self]
+  have h := ENNReal.rpow_le_rpow hC (by positivity : (0 : ℝ) ≤ 1 / p)
+  rwa [ENNReal.mul_rpow_of_nonneg _ _ (by positivity : (0 : ℝ) ≤ 1 / p)] at h
 
 end MeasureTheory
