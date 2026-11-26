@@ -11,6 +11,9 @@ public import Mathlib.MeasureTheory.Integral.Lebesgue.DominatedConvergence
 public import Mathlib.MeasureTheory.Function.ContinuousMapDense
 public import Mathlib.MeasureTheory.Function.LpSpace.ContinuousFunctions
 public import Mathlib.Topology.ContinuousMap.Bounded.Basic
+public import Mathlib.MeasureTheory.Covering.Besicovitch
+public import Mathlib.MeasureTheory.Covering.BesicovitchVectorSpace
+public import Mathlib.MeasureTheory.Measure.Regular
 
 /-!
 # The Hardy–Littlewood maximal function
@@ -23,15 +26,14 @@ normed space `E` over `ℝ`, with respect to a measure `μ`, is
 It is valued in `ℝ≥0∞`, the averages being taken with `laverage`.
 This file sets up the definition and its basic API, and proves that
 the maximal function of a locally integrable function is measurable,
-via continuity (hence lower semicontinuity) of ball averages. The
-Hardy–Littlewood maximal inequalities (weak type `(1, 1)` via the
-Besicovitch covering theorem, and strong type `(p, p)`) are developed
-separately.
+via continuity (hence lower semicontinuity) of ball averages, and
+proves the weak type `(1, 1)` inequality via the Besicovitch covering
+theorem. The strong type `(p, p)` inequality is developed separately.
 -/
 
 public section
 
-open MeasureTheory ENNReal Metric Filter Topology
+open MeasureTheory ENNReal Metric Filter Topology Function
 
 namespace MeasureTheory
 
@@ -517,5 +519,199 @@ theorem measurable_maximalFunction (μ : Measure E)
     (hf : LocallyIntegrable f μ) :
     Measurable (maximalFunction μ f) :=
   (lowerSemicontinuous_maximalFunction μ hf).measurable
+
+/-- On a compact subset `K` of the level set, good radii can be
+chosen with a uniform bound: at each `x ∈ K` a good radius stays good
+on a neighborhood of `x`, by continuity of the ball average in the
+center; finitely many of these neighborhoods cover `K`; take `R` the
+largest of the finitely many radii, and let each point inherit the
+radius of a neighborhood covering it. -/
+theorem exists_bounded_good_radii (μ : Measure E)
+    [MeasureTheory.Measure.IsAddHaarMeasure μ] {f : E → F}
+    (hf : LocallyIntegrable f μ) {t : ℝ≥0∞} {K : Set E} (hK : IsCompact K)
+    (hKlevel : ∀ x ∈ K, t < maximalFunction μ f x) :
+    ∃ R : ℝ, 0 < R ∧ ∃ r : K → ℝ,
+      (∀ x : K, 0 < r x ∧ r x ≤ R) ∧
+      (∀ x : K, t < ballAverage μ f (r x) (x : E)) := by
+  by_cases hKempty : K = ∅
+  · subst hKempty
+    refine ⟨1, one_pos, fun _ => 1, ?_, ?_⟩ <;> intro x <;>
+      exact (Set.notMem_empty (x : E) x.property).elim
+  -- A good radius at each point of `K`.
+  have hgood_ex : ∀ x ∈ K, ∃ ρ : ℝ, 0 < ρ ∧ t < ballAverage μ f ρ x := by
+    intro x hx
+    have hlt := hKlevel x hx
+    rw [maximalFunction_eq_iSup_ballAverage, lt_iSup_iff] at hlt
+    obtain ⟨ρ, hρ⟩ := hlt
+    rw [lt_iSup_iff] at hρ
+    obtain ⟨hρpos, hρgood⟩ := hρ
+    exact ⟨ρ, hρpos, hρgood⟩
+  have hgood_sub : ∀ x : K, ∃ ρ : ℝ, 0 < ρ ∧ t < ballAverage μ f ρ (x : E) :=
+    fun x => hgood_ex x x.property
+  choose ρ hρpos hρgood using hgood_sub
+  -- The good radius at `x` stays good on a neighborhood of `x`.
+  have hU_open : ∀ x : K, IsOpen {y : E | t < ballAverage μ f (ρ x) y} := by
+    intro x
+    have hcont : Continuous (ballAverage μ f (ρ x)) :=
+      continuous_iff_continuousAt.mpr fun y =>
+        continuousAt_ballAverage μ (hρpos x) y hf
+    exact hcont.isOpen_preimage _ isOpen_Ioi
+  -- A finite subcover of `K` by these neighborhoods.
+  have hcover : K ⊆ ⋃ x : K, {y : E | t < ballAverage μ f (ρ x) y} := by
+    intro y hy
+    exact Set.mem_iUnion.mpr ⟨⟨y, hy⟩, hρgood ⟨y, hy⟩⟩
+  obtain ⟨S, hS_cover⟩ := hK.elim_finite_subcover _ hU_open hcover
+  -- `R` is the largest of the finitely many radii.
+  have hS_ne : S.Nonempty := by
+    obtain ⟨y, hy⟩ := Set.ne_empty_iff_nonempty.mp hKempty
+    have hmem := hS_cover hy
+    rw [Set.mem_iUnion₂] at hmem
+    obtain ⟨x, hxS, -⟩ := hmem
+    exact ⟨x, hxS⟩
+  have hR_ub : ∀ x ∈ S, ρ x ≤ S.sup' hS_ne ρ :=
+    fun x hx => Finset.le_sup' ρ hx
+  have hR_pos : 0 < S.sup' hS_ne ρ := by
+    obtain ⟨x₀, hx₀⟩ := hS_ne
+    exact (hρpos x₀).trans_le (Finset.le_sup' ρ hx₀)
+  -- Each point inherits the radius of a covering neighborhood.
+  have hchoice : ∀ y : K, ∃ i ∈ S,
+      (y : E) ∈ {z : E | t < ballAverage μ f (ρ i) z} := by
+    intro y
+    have hmem := hS_cover y.property
+    rw [Set.mem_iUnion₂] at hmem
+    obtain ⟨i, hiS, hiy⟩ := hmem
+    exact ⟨i, hiS, hiy⟩
+  choose idx hidxS hidx_good using hchoice
+  exact ⟨S.sup' hS_ne ρ, hR_pos, ρ ∘ idx,
+    fun y => ⟨hρpos (idx y), hR_ub (idx y) (hidxS y)⟩,
+    fun y => hidx_good y⟩
+
+/-- The weak-type bound on a compact subset of the level set, with
+the Besicovitch constant `N` as the witness. -/
+theorem measure_isCompact_subset_levelSet_le (μ : Measure E)
+    [MeasureTheory.Measure.IsAddHaarMeasure μ] {f : E → F}
+    (hf : Integrable f μ)
+    {N : ℕ} {τ : ℝ} (hτ : 1 < τ)
+    (hN : IsEmpty (Besicovitch.SatelliteConfig E N τ))
+    {t : ℝ≥0∞} (ht : t ≠ 0) {K : Set E} (hK : IsCompact K)
+    (hKsub : K ⊆ {x | t < maximalFunction μ f x}) :
+    μ K ≤ ((N : ℝ≥0∞) / t) * ∫⁻ y, ‖f y‖ₑ ∂μ := by
+  -- Package the bounded good radii on `K` over `↥K`.
+  obtain ⟨R, hR, r, hr, hgoodavg⟩ :=
+    exists_bounded_good_radii μ hf.locallyIntegrable hK (fun x hx => hKsub hx)
+  let q : Besicovitch.BallPackage K E :=
+    { c := fun x => x
+      r := fun x => r x
+      rpos := fun x => (hr x).1
+      r_bound := R
+      r_le := fun x => (hr x).2 }
+  -- Apply the Besicovitch covering theorem.
+  obtain ⟨s, hsdisj, hscover⟩ :=
+    Besicovitch.exist_disjoint_covering_families hτ hN q
+  -- Sum the good-ball estimates over the `Fin N` families.
+  have hgoodopen : ∀ j : K, μ (Metric.ball (q.c j) (q.r j))
+      ≤ t⁻¹ * ∫⁻ y in Metric.ball (q.c j) (q.r j), ‖f y‖ₑ ∂μ := by
+    intro j
+    have hc0 : μ (Metric.ball (q.c j) (q.r j)) ≠ 0 :=
+      ne_of_gt (Metric.isOpen_ball.measure_pos μ
+        (Metric.nonempty_ball.mpr (q.rpos j)))
+    have hcfin : μ (Metric.ball (q.c j) (q.r j)) ≠ ∞ :=
+      ne_top_of_le_ne_top (isCompact_closedBall _ _).measure_lt_top.ne
+        (measure_mono Metric.ball_subset_closedBall)
+    have hj : t * μ (Metric.ball (q.c j) (q.r j))
+        < ∫⁻ y in Metric.ball (q.c j) (q.r j), ‖f y‖ₑ ∂μ := by
+      have h := hgoodavg j
+      simp only [ballAverage, laverage_eq, Measure.restrict_apply_univ] at h
+      exact (ENNReal.lt_div_iff_mul_lt (Or.inl hc0) (Or.inl hcfin)).mp h
+    by_cases htfin : t = ∞
+    · have hμ0 : μ (Metric.ball (q.c j) (q.r j)) = 0 := by
+        by_contra hne
+        rw [htfin, ENNReal.top_mul hne] at hj
+        exact not_lt_of_ge le_top hj
+      rw [hμ0]
+      exact bot_le
+    · have hteq : μ (Metric.ball (q.c j) (q.r j))
+          = t⁻¹ * (t * μ (Metric.ball (q.c j) (q.r j))) := by
+        rw [← mul_assoc, ENNReal.inv_mul_cancel ht htfin, one_mul]
+      rw [hteq]
+      exact mul_le_mul' le_rfl hj.le
+  have hdisjopen : ∀ i : Fin N, (s i).PairwiseDisjoint
+      fun j => Metric.ball (q.c j) (q.r j) := by
+    intro i a ha b hb hab
+    exact Disjoint.mono Metric.ball_subset_closedBall
+      Metric.ball_subset_closedBall ((hsdisj i) ha hb hab)
+  have hcount : ∀ i : Fin N, (s i).Countable := fun i =>
+    (hdisjopen i).countable_of_isOpen (fun j _ => Metric.isOpen_ball)
+      (fun j _ => Metric.nonempty_ball.mpr (q.rpos j))
+  have hfam : ∀ i : Fin N, ∑' j : s i, μ (Metric.ball (q.c j) (q.r j))
+      ≤ t⁻¹ * ∫⁻ y, ‖f y‖ₑ ∂μ := by
+    intro i
+    have : Countable (s i) := (hcount i).to_subtype
+    have hdisjsub : Pairwise (Disjoint on
+        fun j : s i => Metric.ball (q.c j) (q.r j)) := by
+      intro a b hab
+      exact (hdisjopen i) a.property b.property
+        (fun h => hab (Subtype.ext h))
+    calc ∑' j : s i, μ (Metric.ball (q.c j) (q.r j))
+        ≤ ∑' j : s i, (t⁻¹ * ∫⁻ y in Metric.ball (q.c j) (q.r j),
+            ‖f y‖ₑ ∂μ) :=
+          tsum_le_tsum fun j => hgoodopen j
+      _ = t⁻¹ * ∑' j : s i, ∫⁻ y in Metric.ball (q.c j) (q.r j),
+            ‖f y‖ₑ ∂μ := by
+          rw [ENNReal.tsum_mul_left]
+      _ = t⁻¹ * ∫⁻ y in ⋃ j : s i, Metric.ball (q.c j) (q.r j),
+            ‖f y‖ₑ ∂μ := by
+          rw [← lintegral_iUnion (fun j => measurableSet_ball) hdisjsub]
+      _ ≤ t⁻¹ * ∫⁻ y, ‖f y‖ₑ ∂μ := by
+          refine mul_le_mul' le_rfl ?_
+          have hmono : ∫⁻ y in ⋃ j : s i, Metric.ball (q.c j) (q.r j),
+                ‖f y‖ₑ ∂μ
+              ≤ ∫⁻ y in (Set.univ : Set E), ‖f y‖ₑ ∂μ :=
+            lintegral_mono_set (Set.subset_univ _)
+          rwa [setLIntegral_univ] at hmono
+  have hKr : Set.range q.c = K := by
+    ext y
+    constructor
+    · rintro ⟨x, hx⟩
+      rw [← hx]
+      exact x.property
+    · intro hy
+      exact ⟨⟨y, hy⟩, rfl⟩
+  have hcover : μ K ≤ ∑' i : Fin N, ∑' j : s i,
+      μ (Metric.ball (q.c j) (q.r j)) := by
+    calc μ K = μ (Set.range q.c) := by rw [hKr]
+      _ ≤ μ (⋃ i, ⋃ j ∈ s i, Metric.ball (q.c j) (q.r j)) :=
+          measure_mono hscover
+      _ ≤ ∑' i : Fin N, μ (⋃ j ∈ s i, Metric.ball (q.c j) (q.r j)) :=
+          measure_iUnion_le _
+      _ ≤ ∑' i : Fin N, ∑' j : s i, μ (Metric.ball (q.c j) (q.r j)) :=
+          tsum_le_tsum fun i => by
+            have : Countable (s i) := (hcount i).to_subtype
+            rw [Set.biUnion_eq_iUnion]
+            exact measure_iUnion_le _
+  calc μ K ≤ ∑' i : Fin N, (t⁻¹ * ∫⁻ y, ‖f y‖ₑ ∂μ) :=
+        hcover.trans (tsum_le_tsum fun i => hfam i)
+    _ = ((N : ℝ≥0∞) / t) * ∫⁻ y, ‖f y‖ₑ ∂μ := by
+        rw [tsum_fintype, Finset.sum_const, Finset.card_univ,
+          Fintype.card_fin, nsmul_eq_mul, div_eq_mul_inv, mul_assoc]
+
+/-- The Hardy–Littlewood maximal operator is of weak type (1,1):
+there is a constant `C` (the Besicovitch constant of `E`) such that
+for every integrable `f` and every `t ≠ 0`,
+`μ {x | t < maximalFunction μ f x} ≤ (C / t) * ∫⁻ y, ‖f y‖ₑ ∂μ`. -/
+theorem weakType_one_one (μ : Measure E)
+    [MeasureTheory.Measure.IsAddHaarMeasure μ] {f : E → F}
+    (hf : Integrable f μ) :
+    ∃ C : ℝ≥0∞, ∀ t : ℝ≥0∞, t ≠ 0 →
+      μ {x | t < maximalFunction μ f x} ≤ (C / t) * ∫⁻ y, ‖f y‖ₑ ∂μ := by
+  -- Unpack the Besicovitch constant.
+  obtain ⟨N, τ, hτ, hN⟩ := HasBesicovitchCovering.no_satelliteConfig (α := E)
+  refine ⟨N, fun t ht => ?_⟩
+  -- Measurability and inner regularity reduce to compact subsets.
+  have hmeas : MeasurableSet {x | t < maximalFunction μ f x} :=
+    (measurable_maximalFunction μ hf.locallyIntegrable) measurableSet_Ioi
+  rw [hmeas.measure_eq_iSup_isCompact μ]
+  refine iSup_le fun K => iSup_le fun hKsub => iSup_le fun hK => ?_
+  exact measure_isCompact_subset_levelSet_le μ hf hτ hN ht hK hKsub
 
 end MeasureTheory
