@@ -5,15 +5,15 @@ Authors: David Fox
 -/
 module
 
-public import Mathlib.MeasureTheory.Integral.Average
-public import Mathlib.MeasureTheory.Measure.Haar.OfBasis
-public import Mathlib.MeasureTheory.Integral.Lebesgue.DominatedConvergence
-public import Mathlib.MeasureTheory.Function.ContinuousMapDense
-public import Mathlib.MeasureTheory.Function.LpSpace.ContinuousFunctions
-public import Mathlib.Topology.ContinuousMap.Bounded.Basic
 public import Mathlib.MeasureTheory.Covering.Besicovitch
 public import Mathlib.MeasureTheory.Covering.BesicovitchVectorSpace
+public import Mathlib.MeasureTheory.Function.ContinuousMapDense
+public import Mathlib.MeasureTheory.Function.LpSpace.ContinuousFunctions
+public import Mathlib.MeasureTheory.Integral.Average
+public import Mathlib.MeasureTheory.Integral.Lebesgue.DominatedConvergence
+public import Mathlib.MeasureTheory.Measure.Haar.OfBasis
 public import Mathlib.MeasureTheory.Measure.Regular
+public import Mathlib.Topology.ContinuousMap.Bounded.Basic
 
 /-!
 # The Hardy–Littlewood maximal function
