@@ -518,4 +518,59 @@ theorem measurable_maximalFunction (μ : Measure E)
     Measurable (maximalFunction μ f) :=
   (lowerSemicontinuous_maximalFunction μ hf).measurable
 
+omit [BorelSpace E] [NormedSpace ℝ E] [FiniteDimensional ℝ E] in
+/-- Homogeneity of the maximal function: scaling the function by a real
+constant `c` scales the maximal function by `ENNReal.ofReal |c|`. The
+constant is pulled through each ball average by `lintegral_const_mul'`,
+which needs no measurability hypothesis since `ENNReal.ofReal |c| ≠ ∞`
+for every `c`, including `c = 0`. -/
+theorem maximalFunction_smul {μ : Measure E} {c : ℝ} {f : E → ℝ} (x : E) :
+    maximalFunction μ (fun y => c • f y) x = ENNReal.ofReal |c| * maximalFunction μ f x := by
+  have hball : ∀ r : ℝ, ballAverage μ (fun y => c • f y) r x
+      = ENNReal.ofReal |c| * ballAverage μ f r x := by
+    intro r
+    have hInt : (∫⁻ y in Metric.ball x r, ‖c • f y‖ₑ ∂μ)
+        = ENNReal.ofReal |c| * ∫⁻ y in Metric.ball x r, ‖f y‖ₑ ∂μ := by
+      rw [← lintegral_const_mul' _ _ ENNReal.ofReal_ne_top]
+      exact lintegral_congr fun y => by rw [eNorm_smul, Real.eNorm_eq_ofReal_abs]
+    unfold ballAverage
+    rw [laverage_eq, Measure.restrict_apply_univ, laverage_eq,
+      Measure.restrict_apply_univ, hInt, ENNReal.div_eq_inv_mul, ENNReal.div_eq_inv_mul]
+    exact mul_left_comm _ _ _
+  simp only [maximalFunction_eq_iSup_ballAverage]
+  simp_rw [ENNReal.mul_iSup]
+  exact iSup_congr fun r => iSup_congr fun _ => hball r
+
+omit [BorelSpace E] in
+/-- The maximal function of a constant function is the constant: for a
+Haar measure every ball has positive, finite measure, so the average of
+a constant over any ball is the constant itself. -/
+theorem maximalFunction_const {μ : Measure E}
+    [MeasureTheory.Measure.IsAddHaarMeasure μ] {c : ℝ} (x : E) :
+    maximalFunction μ (fun _ => c) x = ENNReal.ofReal |c| := by
+  have hball : ∀ r : ℝ, 0 < r → ballAverage μ (fun _ => c) r x
+      = ENNReal.ofReal |c| := by
+    intro r hr
+    have hpos : μ (Metric.ball x r) ≠ 0 :=
+      ne_of_gt (Metric.isOpen_ball.measure_pos μ (Metric.nonempty_ball.mpr hr))
+    have hfin : μ (Metric.ball x r) ≠ ∞ :=
+      ne_top_of_le_ne_top (isCompact_closedBall x r).measure_lt_top.ne
+        (measure_mono Metric.ball_subset_closedBall)
+    have : IsFiniteMeasure (μ.restrict (Metric.ball x r)) :=
+      ⟨by rw [Measure.restrict_apply_univ]; exact lt_top_iff_ne_top.mpr hfin⟩
+    have : NeZero (μ.restrict (Metric.ball x r)) :=
+      have : NeZero (μ (Metric.ball x r)) := { out := hpos }
+      Measure.restrict.neZero
+    unfold ballAverage
+    rw [laverage_congr (Filter.Eventually.of_forall fun _y =>
+      Real.eNorm_eq_ofReal_abs c)]
+    exact laverage_const _ _
+  rw [maximalFunction_eq_iSup_ballAverage]
+  apply le_antisymm
+  · exact iSup_le fun r => iSup_le fun hr => (hball r hr).le
+  · calc ENNReal.ofReal |c| = ballAverage μ (fun _ => c) 1 x := (hball 1 one_pos).symm
+      _ ≤ ⨆ r : ℝ, ⨆ _ : 0 < r, ballAverage μ (fun _ => c) r x :=
+        (le_iSup (fun _ : (0 : ℝ) < 1 => ballAverage μ (fun _ => c) 1 x) one_pos).trans
+          (le_iSup (fun r : ℝ => ⨆ _ : 0 < r, ballAverage μ (fun _ => c) r x) 1)
+
 end MeasureTheory
